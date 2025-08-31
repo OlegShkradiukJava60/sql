@@ -1,59 +1,39 @@
--- album and artist 
-select a.name "artist name", a.title "album title", t.name "track name"
-from track t
-join adlbum a on t.albumid = a.albumid
-join artist ar on a.artistid = ar.artistid
-where ar.name = 'Queen';
+-- 1) Tracks with album and artist
+select t."Name", al."Title", ar."Name"
+from "Track" t
+join "Album"  al on t."AlbumId" = al."AlbumId"
+join "Artist" ar on al."ArtistId" = ar."ArtistId"
+order by t."Name";
 
--- customer and support rep
-select to_char(cust.customer_id, '9999999999') "Customer ID"
-		 ,concat(cust.first_name, ' ', cust.last_name) "Customer's name"
-		 ,concat(e.first_name, ' ', e.last_name) "Represantative"
-from customer cust
-join employee e on (cust.support_rep_id = e.employee_id)
-order by 3, 2;
+-- 2) Invoice lines with track, invoice date, and customer
+select il."InvoiceLineId", i."InvoiceDate", t."Name", il."UnitPrice", il."Quantity", c."FirstName", c."LastName"
+from "InvoiceLine" il
+join "Invoice"  i on il."InvoiceId" = i."InvoiceId"
+join "Track"    t on il."TrackId"   = t."TrackId"
+join "Customer" c on i."CustomerId" = c."CustomerId"
+order by il."InvoiceLineId";
 
--- invoices
-select to_char(line.invoice_line_id, '9999999999') "Line ID",
-		to_char(i.invoice_date, 'dd.mm.yyyy') "Invoice date",
-		tr.name "Track name",
-		line.unit_price "Price per unit",
-		line.quantity "Quantity",
-		concat(cust.first_name, ' ', cust.last_name) "Customer"
-from invoice i
-join customer cust on i.customer_id = cust.customer_id
-join invoice_line line on i.invoice_id = line.invoice_id
-join track tr on line.track_id = tr.track_id
-order by i.invoice_date desc, i.total desc;
+-- 3) Customers with their support representative
+select c."CustomerId", c."FirstName", c."LastName", e."FirstName", e."LastName"
+from "Customer" c
+left join "Employee" e on c."SupportRepId" = e."EmployeeId"
+order by e."FirstName", e."LastName", c."FirstName", c."LastName";
 
--- Invoices with billing cities
-select i.invoice_id "ID"
-		,to_char(i.invoice_date, 'yyyy-mm-dd') "Invoice date"
-		,i.billing_city "City"
-		,i.total "Total"
-		,concat(cust.first_name, ' ', cust.last_name) "Customer's name"
-from invoice i
-join customer cust on i.customer_id = cust.customer_id
-order by 2 desc, 1;
+-- 4) Playlist contents: playlist name with each track
+select p."Name", t."Name"
+from "Playlist" p
+join "PlaylistTrack" pt on p."PlaylistId" = pt."PlaylistId"
+join "Track"         t  on pt."TrackId"   = t."TrackId"
+order by p."Name", t."Name";
 
+-- 5) Invoices with billing city
+select i."InvoiceId", i."InvoiceDate", i."BillingCity", i."Total", c."FirstName", c."LastName"
+from "Invoice" i
+join "Customer" c on i."CustomerId" = c."CustomerId"
+order by i."InvoiceDate" desc, i."InvoiceId" asc;
 
--- top 5 most expensive tracks
-select city, income
-from (
-	select	i.billing_city city,
-			sum(i.total) income,
-			rank() over (order by sum(i.total) desc) rnk
-	from invoice i
-	group by i.billing_city
-) agg
-where rnk <= 5
-order by income desc;
-
--- Employees with no manager
-select	concat(e.first_name, ' ', e.last_name) "Employee",
-		e.title "Title",
-		to_char(e.birth_date, 'yyyy-mm-dd') "Birthdate",
-		to_char(e.hire_date, 'yyyy-mm-dd') "Hire date"
-from employee e
-where e.reports_to is null;
-
+-- 6) Employees with no manager
+select e."FirstName", e."LastName", e."Title", e."BirthDate", e."HireDate"
+from "Employee" e
+where e."ReportsTo" is null
+order by e."FirstName", e."LastName";
