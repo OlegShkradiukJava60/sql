@@ -109,7 +109,7 @@ CROSS JOIN max_cnt AS m
 WHERE bc.Cnt = m.MaxCnt;
 
 
-/* 5) Employees whose supported customers provide 80% total revenue (Pareto) */
+/* 5) Employees whose supported customers provide 80% total revenue */
 WITH emp_rev AS (
   SELECT
     e.EmployeeId,
