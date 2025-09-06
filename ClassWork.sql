@@ -1,0 +1,64 @@
+-- WITH city_revenue AS (
+-- SELECT SUM(total) AS revenue, billing_city AS city from invoice 
+-- GROUP BY city 
+-- ORDER BY revenue DESC, city
+-- )
+-- all billing cities whose revenue is greater than average value over all cities
+-- select city, revenue from city_revenue where revenue > (select avg(revenue) from city_revenue)
+-- 
+-- Top 5 billing cities by revenue
+-- select * from city_revenue limit 5
+-- 
+-- all billing cities whose revenue is among top 5 greatest values of revenue
+-- , ranked AS (
+-- select city_revenue.*, dense_rank() over(order by revenue desc) as rnk from city_revenue
+-- 
+-- al billing cities whose revenue within 5 top positions
+-- , ranked AS (
+-- select city_revenue.*, rank() over(order by revenue desc) as rnk from city_revenue
+-- )
+-- select * from ranked where rnk <= 5
+-- 
+-- ------------------------------------------------
+-- WITH city_revenue AS (
+-- SELECT SUM(total) AS revenue, billing_city AS city
+-- from invoice 
+-- GROUP BY city 
+-- ORDER BY revenue DESC, city
+-- )
+-- ,
+-- avg_over_table AS (
+-- select city_revenue.*, round(AVG(revenue) over(),2) as avg_over from city_revenue
+-- )
+-- select * from avg_over_table where revenue > avg_over
+-- 
+-- select city_revenue.*, (select round(AVG(revenue), 2) from city_revenue) from city_revenue
+-- where revenue > (select AVG(revenue) from city_revenue)
+-- 
+-- , avg_over_table AS (
+-- select round(AVG(revenue), 2) as avg_over from city_revenue 
+-- )
+-- select city_revenue.*, avg_over from city_revenue cross join avg_over_table where revenue > avg_over
+
+
+-- select * from (
+-- select invoice_id, customer_id, invoice_date, total,
+-- lag(invoice_date) over(
+-- partition by customer_id
+-- order by invoice_date
+-- ) as previous_invoice_date
+-- from invoice
+-- ) s where previous_invoice_date is not null and 
+-- invoice_date - previous_invoice_date > interval '200 days'
+-- 
+-- WITH city_revenue AS (
+-- SELECT SUM(total) AS revenue, billing_city AS city from invoice 
+-- GROUP BY city 
+-- ORDER BY revenue DESC, city
+-- ),
+-- cumulatived AS (
+-- select city, revenue,
+-- sum(revenue) over(order by revenue desc, city) as cum_revenue 
+-- from city_revenue
+-- )
+-- select * from cumulatived
