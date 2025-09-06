@@ -1,50 +1,145 @@
--- 1. Tracks never sold ordered by artist’s name and track’s name
-select	tr.track_id "Track ID",
-		tr.name "Track name",
-		g.name "Genre name",
-		art.name "Artist name"
-from track tr
-left join album al on tr.album_id = al.album_id
-left join artist art on art.artist_id = al.artist_id
-left join genre g on tr.genre_id = g.genre_id
-where not exists (select 1 from invoice_line il where il.track_id = tr.track_id)
-order by art.name, tr.name;
+/* 1) Top 5 longest tracks
+      a) Track ID
+      b) Track name
+      c) Album title
+      d) Time: minutes / seconds / milliseconds */
+WITH tracks AS (
+  SELECT
+    t.TrackId      AS TrackId,
+    t.Name         AS TrackName,
+    al.Title       AS AlbumTitle,
+    t.Milliseconds AS Ms
+  FROM Track AS t
+  JOIN Album AS al ON al.AlbumId = t.AlbumId
+),
+rank_like AS (
+  SELECT
+    a.TrackId,
+    a.TrackName,
+    a.AlbumTitle,
+    a.Ms,
+    (SELECT COUNT(DISTINCT b.Ms) FROM tracks AS b WHERE b.Ms > a.Ms) AS GreaterCnt
+  FROM tracks AS a
+),
+top5 AS (
+  SELECT TrackId, TrackName, AlbumTitle, Ms
+  FROM rank_like
+  WHERE GreaterCnt < 5
+)
+SELECT
+  TrackId,
+  TrackName,
+  AlbumTitle,
+  Ms/60000     AS Minutes,
+  (Ms/1000)%60 AS Seconds,
+  Ms%1000      AS Milliseconds
+FROM top5;
 
--- 2. Top 10 tracks by revenue ordered by revenue in descending order and by artist name and by track name
-select 	tr.track_id "Track ID",
-		tr.name "Track name",
-		art.name "Artist"
-from track tr
-join invoice_line il on tr.track_id = il.track_id
-left join album al on tr.album_id = al.album_id
-left join artist art on art.artist_id = al.artist_id
-group by tr.track_id, tr.name, art.name
-order by sum(il.quantity * il.unit_price) desc, art.name, tr.name
-limit 10;
 
--- 3. Top 5 genres by revenue ordered by revenue in descending order and by genre name
-select	g.genre_id as "Genre ID",
-		g.name as "Genre name",
-		sum(il.quantity * il.unit_price) as "Revenue"
-from track tr
-join genre g on tr.genre_id = g.genre_id
-join invoice_line il on tr.track_id = il.track_id
-group by g.genre_id, g.name
-order by sum(il.quantity * il.unit_price) desc, g.name
-limit 5;
+/* 2) Genres with revenue in top-3 values */
+WITH genre_rev AS (
+  SELECT
+    g.GenreId,
+    g.Name AS GenreName,
+    SUM(il.UnitPrice * il.Quantity) AS Revenue
+  FROM Genre AS g
+  JOIN Track AS t ON t.GenreId = g.GenreId
+  JOIN InvoiceLine AS il ON il.TrackId = t.TrackId
+  GROUP BY g.GenreId, g.Name
+),
+rank_like AS (
+  SELECT
+    a.GenreName,
+    a.Revenue,
+    (SELECT COUNT(DISTINCT b.Revenue) FROM genre_rev AS b WHERE b.Revenue > a.Revenue) AS RankMinus1
+  FROM genre_rev AS a
+),
+top3 AS (
+  SELECT GenreName, Revenue, RankMinus1 + 1 AS Rank
+  FROM rank_like
+  WHERE RankMinus1 < 3
+)
+SELECT GenreName, Revenue, Rank
+FROM top3;
 
--- 4. Invoices having attribute “total” different from the total value computed from the appropriate invoice lines
-select i.invoice_id
-from invoice i
-where i.total != (
-	select sum(il.quantity * il.unit_price)
-	from invoice_line il
-	where il.invoice_id = i.invoice_id
-);
 
--- 5. Albums having tracks with different values of the unit price
- select al.album_id as "Album id", al.title as "Album name"
- from album al
- join track tr on tr.album_id = al.album_id
- group by al.album_id, al.title
- having count(distinct tr.unit_price) > 1;
+/* 3) Customers with revenue in top-3 positions */
+WITH cust_rev AS (
+  SELECT
+    c.CustomerId,
+    c.FirstName || ' ' || c.LastName AS FullName,
+    SUM(i.Total) AS Revenue
+  FROM Customer AS c
+  JOIN Invoice AS i ON i.CustomerId = c.CustomerId
+  GROUP BY c.CustomerId, c.FirstName, c.LastName
+),
+rank_like AS (
+  SELECT
+    a.CustomerId,
+    a.FullName,
+    a.Revenue,
+    (SELECT COUNT(DISTINCT b.Revenue) FROM cust_rev AS b WHERE b.Revenue > a.Revenue) AS RankMinus1
+  FROM cust_rev AS a
+),
+top3 AS (
+  SELECT CustomerId, FullName, Revenue
+  FROM rank_like
+  WHERE RankMinus1 < 3
+)
+SELECT CustomerId, FullName, Revenue
+FROM top3;
+
+
+/* 4) Billing countries with maximal number of invoices */
+WITH by_country AS (
+  SELECT
+    i.BillingCountry AS Country,
+    COUNT(*) AS Cnt
+  FROM Invoice AS i
+  GROUP BY i.BillingCountry
+),
+max_cnt AS (
+  SELECT MAX(Cnt) AS MaxCnt FROM by_country
+)
+SELECT
+  bc.Country,
+  bc.Cnt AS NumberOfInvoices
+FROM by_country AS bc
+CROSS JOIN max_cnt AS m
+WHERE bc.Cnt = m.MaxCnt;
+
+
+/* 5) Employees whose supported customers provide 80% total revenue (Pareto) */
+WITH emp_rev AS (
+  SELECT
+    e.EmployeeId,
+    e.FirstName || ' ' || e.LastName AS EmpName,
+    COALESCE(SUM(i.Total), 0) AS Revenue
+  FROM Employee AS e
+  LEFT JOIN Customer AS c ON c.SupportRepId = e.EmployeeId
+  LEFT JOIN Invoice AS i ON i.CustomerId = c.CustomerId
+  GROUP BY e.EmployeeId, e.FirstName, e.LastName
+),
+total_rev AS (
+  SELECT SUM(Revenue) AS AllRev FROM emp_rev
+),
+thr AS (
+  SELECT 0.8 * AllRev AS Thr FROM total_rev
+),
+cutoff_rev AS (
+  SELECT MIN(er2.Revenue) AS Cutoff
+  FROM emp_rev AS er2
+  CROSS JOIN thr
+  WHERE (
+    SELECT SUM(er3.Revenue) FROM emp_rev AS er3
+    WHERE er3.Revenue >= er2.Revenue
+  ) >= thr.Thr
+),
+selected AS (
+  SELECT er.EmpName, er.Revenue
+  FROM emp_rev AS er
+  CROSS JOIN cutoff_rev AS c
+  WHERE er.Revenue >= c.Cutoff
+)
+SELECT EmpName AS EmployeeFullName, Revenue AS RevenueFromSupportedCustomers
+FROM selected;
